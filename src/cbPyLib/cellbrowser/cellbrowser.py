@@ -58,7 +58,7 @@ if sys.version_info >= (3, 0):
     isPy3 = True
 
 # directory to static data files, e.g. gencode tables
-# By default, this is ~/cbData, or alternatively /usr/local/share/cellbrowser 
+# By default, this is ~/cbData, or alternatively /usr/local/share/cellbrowser
 # or the directory in the environment variable CBDATA, see findCbData()
 #dataDir = join(dirname(__file__), "..", "cbData")
 dataDir = None
@@ -192,7 +192,7 @@ def findCbData():
     global dataDir
     if dataDir is not None:
         return dataDir
-    
+
     envCbData = os.environ.get("CBDATA")
     if envCbData is not None:
         logging.debug("CBDATA variable found, points to %s" % envCbData)
@@ -354,11 +354,14 @@ def maybeLoadConfig(confFname):
     return conf
 
 cbConf = None
-def getConfig(tag, defValue=None):
+def getConfig(tag, path=None, defValue=None):
     " get a global cellbrowser config value from ~/.cellbrowser.conf "
     global cbConf
-    if cbConf is None:
-        confPath = expanduser("~/.cellbrowser.conf")
+    if (cbConf is None or cbConf == OrderedDict()):
+        if path is None:
+            confPath = expanduser("~/.cellbrowser.conf")
+        else:
+            confPath = expanduser(path)
         cbConf = maybeLoadConfig(confPath)
 
     ret = cbConf.get(tag, defValue)
@@ -649,7 +652,7 @@ def parseOneColumn(fname, colName):
     vals = []
     colIdx = None
     logging.debug("Parsing column %s from file %s" % (colName, fname))
-   
+
     colIdx = None
     for row in textFileRows(fname):
         if colIdx is None:
@@ -1114,7 +1117,7 @@ def runGzip(fname, finalFname=None):
     return finalFname
 
 def addLongLabels(acronyms, fieldMeta):
-    """ add a 'longLabel' meta info entry, a list of longer strings for enum fields, if any shortLabels have a longLabel 
+    """ add a 'longLabel' meta info entry, a list of longer strings for enum fields, if any shortLabels have a longLabel
     in the acronyms dict of shortLabel = longLabel """
     if acronyms is None:
         return fieldMeta
@@ -1241,7 +1244,7 @@ def iterLineOffsets(ifh):
        start = ifh.tell()
 
 def findMtxFiles(fname):
-    " given the name of a .mtx.gz or directory name, find the .mtx.gz, genes/features and barcode files " 
+    " given the name of a .mtx.gz or directory name, find the .mtx.gz, genes/features and barcode files "
     if isdir(fname):
         matDir = fname
     else:
@@ -1322,7 +1325,7 @@ class MatrixTsvReader:
         logging.debug("Opening %s" % fname)
         self.fname = fname
         if fname.endswith(".gz"):
-            # python's gzip is slower, but does not return an error if we read just 
+            # python's gzip is slower, but does not return an error if we read just
             # a single line
             if usePyGzip:
                 self.ifh = openFile(fname)
@@ -1981,7 +1984,11 @@ def scaleCoords(coords, limits):
     minX, maxX, minY, maxY, scaleX, scaleY, useTwoBytes, flipY = limits
     newCoords = {}
     for cellId, x, y in coords:
-        x, y = scalePoint(scaleX, scaleY, minX, maxX, minY, maxY, flipY, useTwoBytes, x, y)
+        if x != HIDDENCOORD: # added condition so that the hidden coordinate doesn't get scaled - Henry
+            x, y = scalePoint(scaleX, scaleY, minX, maxX, minY, maxY, flipY, useTwoBytes, x, y)
+        else: # make sure that the hiddencoord is integer because the equality check doesn't check for this and scanpy likes float - Henry
+            x = HIDDENCOORD
+            y = HIDDENCOORD
         newCoords[cellId] = (x, y)
     return newCoords
 
@@ -2064,7 +2071,7 @@ def readMatrixSampleNames(fname):
     else:
         return readHeaders(fname)[1:]
 
-def metaReorder(matrixFname, metaFname, fixedMetaFname):
+def metaReorder(matrixFname, metaFname, fixedMetaFname, doSkipFields=True):
     """ check and reorder the meta data, has to be in the same order as the
     expression matrix, write to fixedMetaFname. Remove single-value fields. """
 
@@ -2122,12 +2129,13 @@ def metaReorder(matrixFname, metaFname, fixedMetaFname):
 
     # find fields that contain only a single value
     skipFields = set()
-    for fieldIdx, values in iterItems(fieldValues):
-        #logging.debug("fieldIdx %d, values %s" % (fieldIdx, values))
-        if len(values)==1:
-            logging.info("Field %d, '%s', has only a single value. Removing this field from meta data." %
-                    (fieldIdx, headers[fieldIdx] ))
-            skipFields.add(fieldIdx)
+    if doSkipFields:
+        for fieldIdx, values in iterItems(fieldValues):
+            #logging.debug("fieldIdx %d, values %s" % (fieldIdx, values))
+            if len(values)==1:
+                logging.info("Field %d, '%s', has only a single value. Removing this field from meta data." %
+                        (fieldIdx, headers[fieldIdx] ))
+                skipFields.add(fieldIdx)
 
     # write the header line, removing unused fields
     ofh.write("\t".join(sliceRow(headers, skipFields)))
@@ -2248,7 +2256,7 @@ def copyMatrixTrim(inFname, outFname, filtSampleNames, doFilter, geneToSym, matT
     if (not doFilter and not ".csv" in inFname.lower()):
         logging.info("Copying/compressing %s to %s" % (inFname, outFname))
 
-        # XX stupid .gz heuristics... 
+        # XX stupid .gz heuristics...
         if inFname.endswith(".gz"):
             cmd = "cp \"%s\" \"%s\"" % (inFname, outFname)
         else:
@@ -2452,7 +2460,7 @@ def splitMarkerTable(filename, geneToSym, outDir):
     for clusterName, rows in iterItems(data):
         logging.debug("Cluster: %s" % clusterName)
         sanName = sanitizeName(clusterName)
-        assert(sanName not in sanNames) # after removing special chars, cluster names must still be unique. this is most likely due to typos in your meta annotation table. 
+        assert(sanName not in sanNames) # after removing special chars, cluster names must still be unique. this is most likely due to typos in your meta annotation table.
         sanNames.add(sanName)
 
         outFname = join(outDir, sanName+".tsv")
@@ -2668,6 +2676,8 @@ def makeAbsDict(conf, key):
     dicts = conf[key]
     for d in dicts:
         d["file"] = makeAbs(inDir, d["file"])
+        if "lineFile" in d:
+            d["lineFile"] = makeAbs(inDir, d["lineFile"]) # Henry - so we can use relative line file paths too
     return dicts
 
 def parseTsvColumn(fname, colName):
@@ -2892,7 +2902,7 @@ def scaleLines(lines, limits, flipY):
         scaledLines.append( (x1, y1, x2, y2) )
     return scaledLines
 
-def parseLineInfo(inFname, limits):
+def parseLineInfo(inFname, limits, lineFlipY):
     " parse a tsv or csv file and use the first four columns as x1,y1,x2,y2 for straight lines "
     coords = []
     for row in lineFileNextRow(inFname):
@@ -2901,6 +2911,21 @@ def parseLineInfo(inFname, limits):
     minX, maxX, minY, maxY, scaleX, scaleY, useTwoBytes, flipY = limits
 
     lines = []
+#     if lineFlipY and not flipY: # Henry - edge case where lines need to be flipped but coords don't and lines are bigger than coords
+#         print("lineFlipY", lineFlipY)
+#         for x1, y1, x2, y2 in coords:
+#             minX = min(minX, x1, x2)
+#             minY = max(minY, y1, y2)
+#             maxX = max(maxX, x1, x2)
+#             maxY = min(maxY, y1, y2)
+
+#             lines.append( (x1, y1, x2, y2) )
+# #         minX = 0.7
+# #         minY = 0.2
+# #         maxX = 22
+# #         maxY = 1
+#         print(minX, minY)
+#     else:
     for x1, y1, x2, y2 in coords:
         minX = min(minX, x1, x2)
         minY = min(minY, y1, y2)
@@ -2908,6 +2933,7 @@ def parseLineInfo(inFname, limits):
         maxY = max(maxY, y1, y2)
 
         lines.append( (x1, y1, x2, y2) )
+
     logging.info("Parsed %s, got %d lines" % (inFname, len(lines)))
 
     scaleX, scaleY = calcScaleFact(minX, maxX, minY, maxY, useTwoBytes)
@@ -2962,13 +2988,13 @@ def convertCoords(inConf, outConf, sampleNames, outMeta, outDir):
     " convert the coordinates "
     coordFnames = makeAbsDict(inConf, "coords")
 
-    flipY = inConf.get("flipY", False)
+    # flipY = inConf.get("flipY", False) # Henry - replace this with a per coordinate flipY
     #useTwoBytes = inConf.get("useTwoBytes", None)
     useTwoBytes = True
 
     hasLabels = False
     if "labelField" in inConf and inConf["labelField"] is not None:
-        hasLabels = True
+        hasLabels = inConf.get("hasLabels", True)
         clusterLabelField = inConf["labelField"]
         labelVec, labelVals = parseTsvColumn(outMeta, clusterLabelField)
         outConf["labelField"] = clusterLabelField
@@ -2979,6 +3005,7 @@ def convertCoords(inConf, outConf, sampleNames, outMeta, outDir):
     for coordIdx, inCoordInfo in enumerate(coordFnames):
         coordFname = inCoordInfo["file"]
         coordLabel = inCoordInfo["shortLabel"]
+        flipY = inCoordInfo["flipY"] # per coordinate flipY - Henry
         logging.info("Parsing coordinates for "+coordLabel)
         # 'limits' is everything needed to transform coordinates to the final 0-1.0  or 0-65535 coord system
         coords, limits = parseCoordsAsDict(coordFname, useTwoBytes, flipY)
@@ -2986,7 +3013,8 @@ def convertCoords(inConf, outConf, sampleNames, outMeta, outDir):
         hasLines = False
         # parse lines, updating the max-max ranges
         if "lineFile" in inCoordInfo:
-            lineCoords, limits = parseLineInfo(inCoordInfo["lineFile"], limits)
+            lineFlipY = inCoordInfo.get("lineFlipY", flipY) # Henry - moved here so it can be used in parseLineInfo
+            lineCoords, limits = parseLineInfo(inCoordInfo["lineFile"], limits, lineFlipY)
             hasLines = True
 
         # now that we have the global limits, scale everything
@@ -2994,7 +3022,7 @@ def convertCoords(inConf, outConf, sampleNames, outMeta, outDir):
 
         clusterInfo = {}
         if hasLines:
-            lineFlipY = inCoordInfo.get("lineFlipY", flipY)
+
             lineData = scaleLines(lineCoords, limits, lineFlipY)
             clusterInfo["lines"] = lineData
 
@@ -3168,7 +3196,8 @@ def convertMeta(inDir, inConf, outConf, outDir, finalMetaFname):
     metaIdxFname = join(outDir, "meta.index")
 
     matrixFname = getAbsPath(inConf, "exprMatrix")
-    sampleNames, needFilterMatrix = metaReorder(matrixFname, metaFname, finalMetaFname)
+    doSkipFields = inConf["doSkipFields"]
+    sampleNames, needFilterMatrix = metaReorder(matrixFname, metaFname, finalMetaFname, doSkipFields)
 
     outConf["sampleCount"] = len(sampleNames)
     outConf["matrixWasFiltered"] = needFilterMatrix
@@ -3474,7 +3503,7 @@ def convertDataset(inDir, inConf, outConf, datasetDir, redo):
     needFilterMatrix = True
 
     if doMeta or doMatrix or redo in ["meta", "matrix"]:
-        # convertMeta also compares the sample IDs between meta and matrix to determine if the meta file 
+        # convertMeta also compares the sample IDs between meta and matrix to determine if the meta file
         # needs reordering or trimming (=if the meta contains more cells than the matrix)
         sampleNames, needFilterMatrix = convertMeta(inDir, inConf, outConf, datasetDir, outMetaFname)
     else:
@@ -4049,11 +4078,12 @@ def build(confFnames, outDir, port=None, doDebug=False, devMode=False, redo=None
         dataRoot = findRoot(inConfFname)
         if dataRoot:
             if "name" in inConf:
-                logging.info("using dataset hierarchies: 'name' in %s is ignored" % inConfFname)
+                logging.warn("using dataset hierarchies: 'name' in %s is ignored" % inConfFname)
             logging.debug("Deriving dataset name from path")
             inConf["name"] = basename(dirname(abspath(inConfFname)))
 
-            relPath = relpath(dirname(abspath(inConfFname)), dataRoot)
+            relPath = relpath(dirname(abspath(inConfFname)),
+                              join(dataRoot, getConfig("name", join(inDir, "cellbrowser.conf"))))
         else:
             relPath = inConf["name"]
 
@@ -4107,11 +4137,18 @@ def build(confFnames, outDir, port=None, doDebug=False, devMode=False, redo=None
         writeJson(summInfo, outFname)
 
     cbUpgrade(outDir, doData=False)
+    # rebuild the flat list, for legacy installs not using dataset hierarchies
+    logging.info("Rebuilding flat list of datasets")
+    datasets = subdirDatasetJsonData(outDir)
+    summInfo = summarizeDatasets(datasets)
+    outFname = join(outDir, "dataset.json")
+    writeJson(summInfo, outFname)
 
     outIndexFname = join(outDir, "index.html")
     if not isfile(outIndexFname):
         logging.info("%s does not exist: running cbUpgrade now to make sure there is an index.html" % outIndexFname)
         cbUpgrade(outDir, doData=False, doCode=True)
+    cbUpgrade(outDir, doData=True, doCode=True)
 
     if port:
         print("Interrupt this process, e.g. with Ctrl-C, to stop the webserver")
@@ -4161,7 +4198,7 @@ def serveDirect(outDir, port):
     write PID into <tempdir>/cellbrowser.pid. NOT USED FOR NOW - Jupyther/ipython/Rstudio don't like this  """
     # mostly copied from
     # http://code.activestate.com/recipes/66012-fork-a-daemon-process-on-unix/
-    # do the UNIX double-fork magic, see Stevens' "Advanced 
+    # do the UNIX double-fork magic, see Stevens' "Advanced
     # Programming in the UNIX Environment" for details (ISBN 0201563177)
     try:
         pid = os.fork()
@@ -4203,7 +4240,7 @@ def stop():
         return
 
     try:
-        os.kill(pid, signal.SIGTERM) #or signal.SIGKILL 
+        os.kill(pid, signal.SIGTERM) #or signal.SIGKILL
     except OSError as ex:
         print("Unable to kill cellbrowser process with PID %d" % pid)
         return
@@ -4865,7 +4902,7 @@ def cbScanpy(matrixFname, inMeta, inCluster, confFname, figDir, logFname):
     pipeLog("Input file: %s" % matrixFname)
 
     pipeLog("Restricting OPENBLAS to 4 threads")
-    os.environ["OPENBLAS_NUM_THREADS"] = "4" # export OPENBLAS_NUM_THREADS=4 
+    os.environ["OPENBLAS_NUM_THREADS"] = "4" # export OPENBLAS_NUM_THREADS=4
 
     #printLog("Output directory: %s" % outDir)
     pipeLog("Start time: %s" % datetime.datetime.now())
@@ -5043,7 +5080,7 @@ def cbScanpy(matrixFname, inMeta, inCluster, confFname, figDir, logFname):
             pipeLog('Regressing out number of UMIs')
             sc.pp.regress_out(adata, ['n_counts'])
 
-        #Scaling after regression 
+        #Scaling after regression
         maxValue = conf["regressMax"]
         pipeLog('Scaling data, max_value=%d' % maxValue)
         sc.pp.scale(adata, max_value=maxValue)
